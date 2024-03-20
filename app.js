@@ -4,28 +4,17 @@ import WebSocket from 'ws';
 import amqp from 'amqplib';
 import fetch from 'node-fetch';
 import dotenv from 'dotenv';
-import morgan from 'morgan';
+import { v4 as uuidv4 } from 'uuid';
 import promBundle from 'express-prom-bundle';
 
 import { getCompanyConfig } from './helpers/helpers';
-import logger from './config/logger';
+import { setupMorgan, logger } from './config/logger';
 
 dotenv.config();
 
 const app = express();
 
-const server = http.createServer(app);
-const wss = new WebSocket.Server({ server });
-let messages = {};
-
-let rabbitMQConnection = null;
-let rabbitMQChannel = null;
-
-app.use(morgan('combined', { stream: { write: message => logger.info(message.trim()) } }));
-const metricsMiddleware = promBundle({includeMethod: true, includePath: true});
-app.use(metricsMiddleware);
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+setupMorgan(app);
 
 const redis = require('redis');
 const client = redis.createClient({
@@ -35,18 +24,48 @@ const client = redis.createClient({
 });
 
 client.on('error', (err) => logger.error('Redis Client Error', err));
+client.connect();
 
-await client.connect();
+const server = http.createServer(app);
+const wss = new WebSocket.Server({ server });
+
+let rabbitMQConnection = null;
+let rabbitMQChannel = null;
+
+const metricsMiddleware = promBundle({includeMethod: true, includePath: true});
+app.use(metricsMiddleware);
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
 wss.on('connection', (ws, req) => {
     const companyId = new URL(req.url, `http://${req.headers.host}`).searchParams.get('companyId');
+    const wsId = uuidv4();
+    ws.id = wsId;
 
-    client.sAdd(`company:${companyId}:sockets`, ws.id);
+    client.sAdd(`company:${companyId}:sockets`, wsId);
 
     ws.on('close', () => {
 
-        client.sRem(`company:${companyId}:sockets`, ws.id);
-    });
+    client.sRem(`company:${companyId}:sockets`, wsId);
+    
+});
+
+    ws.isAlive = true;
+
+    ws.on('pong', () => {
+      ws.isAlive = true;
+});
+
+const interval = setInterval(() => {
+    if (ws.isAlive === false) return ws.terminate();
+
+    ws.isAlive = false;
+    ws.ping();
+  }, 30000);
+
+  ws.on('close', () => {
+    clearInterval(interval);
+  });
 });
 
 async function initializeRabbitMQ() {
@@ -109,22 +128,21 @@ async function sendToRabbitMQ(companyConfig, body) {
         const routingKey = companyConfig.rabbitmq_routing_key || '';
 
         logger.info(`Declarando exchange '${exchange}' do tipo 'topic' para a empresa ${companyConfig.companyId}...`);
-        await channel.assertExchange(exchange, 'topic', { durable: true });
+        await rabbitMQChannel.assertExchange(exchange, 'topic', { durable: true });
 
         logger.info(`Declarando fila '${queue}' do tipo 'quorum' para a empresa ${companyConfig.companyId}...`);
-        await channel.assertQueue(queue, { durable: true, arguments: { 'x-queue-type': 'quorum' } });
+        await rabbitMQChannel.assertQueue(queue, { durable: true, arguments: { 'x-queue-type': 'quorum' } });
 
         logger.info(`Vinculando fila '${queue}' à exchange '${exchange}' com routing key '${routingKey}' para a empresa ${companyConfig.companyId}...`);
-        await channel.bindQueue(queue, exchange, routingKey);
+        await rabbitMQChannel.bindQueue(queue, exchange, routingKey);
 
-        channel.publish(exchange, routingKey, Buffer.from(JSON.stringify(body)), { deliveryMode: 1 });
+        rabbitMQChannel.publish(exchange, routingKey, Buffer.from(JSON.stringify(body)), { deliveryMode: 1 });
         logger.info(`Mensagem enviada para o RabbitMQ para a empresa ${companyConfig.companyId}`, { body });
 
     } catch (error) {
         logger.error(`Erro ao enviar para o RabbitMQ para a empresa ${companyConfig.companyId}`, { error: error.message });
     } finally {
-        if (channel) await channel.close();
-        if (conn) await conn.close();
+
     }
 }
 
