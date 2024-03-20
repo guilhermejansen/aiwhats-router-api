@@ -1,14 +1,18 @@
-// helpers.js
-import companys from './models/companys';
+// helpers/helpers.js
+import logger from '../config/logger';
+import WhatsappOficial from '../models/WhatsappOficial';
 
-export async function getCompanyConfig(companyId) {
+async function getCompanyConfig(companyId) {
     try {
-        const companyConfig = await companys.findByPk(companyId);
-        return companyConfig;
+        const companyConfig = await WhatsappOficial.findByPk(companyId);
+        if (!companyConfig) {
+            throw new Error(`Empresa não encontrada com o ID: ${companyId}`);
+        }
+        return companyConfig.get({ plain: true });
     } catch (error) {
-        console.error('Erro ao buscar configuração da companys:', error);
+        logger.error("Erro ao buscar configurações da empresa:", { companyId, error: error.message });
         throw error;
     }
 }
 
-// Você pode adicionar mais helpers conforme necessário
+export { getCompanyConfig };
