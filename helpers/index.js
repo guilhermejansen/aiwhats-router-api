@@ -1,6 +1,6 @@
-// helpers/helpers.js
-import logger from '../config/logger';
-import WhatsappOficial from '../models/WhatsappOficial';
+// helpers/index.js
+import { logger } from '../config/logger.js';
+import WhatsappOficial from '../models/WhatsappOficial.js';
 
 async function getCompanyConfig(companyId) {
     try {

@@ -1,30 +1,37 @@
 import express from 'express';
 import http from 'http';
-import WebSocket from 'ws';
+import { WebSocketServer } from 'ws';
 import amqp from 'amqplib';
 import fetch from 'node-fetch';
 import dotenv from 'dotenv';
 import { v4 as uuidv4 } from 'uuid';
 import promBundle from 'express-prom-bundle';
+import redis from 'redis';
 
-import { getCompanyConfig } from './helpers/helpers';
-import { setupMorgan, logger } from './config/logger';
+
+import sequelize from './config/database.js';
+import { logger, setupMorgan } from './config/logger.js';
+import WhatsappOficial from './models/WhatsappOficial.js';
+import companyRoutes from './routes/companyRoutes.js';
 
 dotenv.config();
 
 const app = express();
+const server = http.createServer(app);
+const wss = new WebSocketServer({ server }, () => {
+    logger.info('WebSocket server is running');
+  });
+
+app.use('/companys', companyRoutes);
 
 setupMorgan(app);
 
-sequelize.authenticate()
-  .then(() => {
+sequelize.authenticate().then(() => {
     logger.info('Conexão com o banco de dados estabelecida com sucesso.');
-  })
-  .catch(err => {
+}).catch(err => {
     logger.error('Não foi possível conectar ao banco de dados:', err);
 });
 
-const redis = require('redis');
 const client = redis.createClient({
     host: process.env.REDIS_HOST,
     port: process.env.REDIS_PORT,
@@ -32,10 +39,8 @@ const client = redis.createClient({
 });
 
 client.on('error', (err) => logger.error('Redis Client Error', err));
+client.on('connect', () => logger.info('Connected to Redis')); // Log when connected to Redis
 client.connect();
-
-const server = http.createServer(app);
-const wss = new WebSocket.Server({ server });
 
 let rabbitMQConnection = null;
 let rabbitMQChannel = null;
@@ -157,7 +162,7 @@ async function sendToRabbitMQ(companyConfig, body) {
 app.post("/webhook/:companyId", async (req, res) => {
     try {
         const { companyId } = req.params;
-        const companyConfig = await getCompanyConfig(companyId);
+        const companyConfig = await WhatsappOficial.findByPk(companyId);
         const body = req.body;
         logger.info("Webhook recebido:", { body, companyId });
 
@@ -189,7 +194,7 @@ app.get("/webhook/:companyId", async (req, res) => {
     const { "hub.mode": mode, "hub.verify_token": token, "hub.challenge": challenge } = req.query;
 
     try {
-        const companyConfig = await getCompanyConfig(companyId);
+        const companyConfig = await WhatsappOficial.findByPk(companyId);
 
     if (mode === "subscribe" && token === companyConfig.verify_token) {
             logger.info("WEBHOOK VERIFICADO para a empresa:", companyId);

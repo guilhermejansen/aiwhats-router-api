@@ -28,9 +28,9 @@ const logger = winston.createLogger({
     ]
 });
 
-// Função para configurar o Morgan para usar o logger do Winston
 function setupMorgan(app) {
     app.use(morgan('combined', { stream: { write: message => logger.info(message.trim()) } }));
 }
 
 export { logger, setupMorgan };
+

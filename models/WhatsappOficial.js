@@ -1,6 +1,6 @@
-// models/WhatsappOficial.js
-import { Sequelize, DataTypes } from 'sequelize';
-import sequelize from '../config/database';
+// /models/WhatsappOficial.js
+import { DataTypes } from 'sequelize';
+import sequelize from '../config/database.js';
 
 const WhatsappOficial = sequelize.define('WhatsappOficial', {
     companyid: {

@@ -1,3 +1,6 @@
 .env
-/node_modules
+.babelrc
+jest.config.cjs
 package-lock.json
+/tests
+/node_modules
