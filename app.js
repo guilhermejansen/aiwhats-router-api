@@ -1,9 +1,12 @@
 import express from 'express';
-import morgan from 'morgan';
-import promBundle from 'express-prom-bundle';
+import http from 'http';
+import WebSocket from 'ws';
+import amqp from 'amqplib';
 import fetch from 'node-fetch';
 import dotenv from 'dotenv';
-import amqp from 'amqplib';
+import morgan from 'morgan';
+import promBundle from 'express-prom-bundle';
+
 import { getCompanyConfig } from './helpers/helpers';
 import logger from './config/logger';
 
@@ -11,13 +14,52 @@ dotenv.config();
 
 const app = express();
 
-app.use(morgan('combined', { stream: { write: message => logger.info(message.trim()) } }));
+const server = http.createServer(app);
+const wss = new WebSocket.Server({ server });
+let messages = {};
 
+let rabbitMQConnection = null;
+let rabbitMQChannel = null;
+
+app.use(morgan('combined', { stream: { write: message => logger.info(message.trim()) } }));
 const metricsMiddleware = promBundle({includeMethod: true, includePath: true});
 app.use(metricsMiddleware);
-
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+const redis = require('redis');
+const client = redis.createClient({
+    host: process.env.REDIS_HOST,
+    port: process.env.REDIS_PORT,
+    password: process.env.REDIS_PASSWORD
+});
+
+client.on('error', (err) => logger.error('Redis Client Error', err));
+
+await client.connect();
+
+wss.on('connection', (ws, req) => {
+    const companyId = new URL(req.url, `http://${req.headers.host}`).searchParams.get('companyId');
+
+    client.sAdd(`company:${companyId}:sockets`, ws.id);
+
+    ws.on('close', () => {
+
+        client.sRem(`company:${companyId}:sockets`, ws.id);
+    });
+});
+
+async function initializeRabbitMQ() {
+    if (process.env.RABBITMQ_ENABLED === 'true' && !rabbitMQConnection) {
+        try {
+            rabbitMQConnection = await amqp.connect(process.env.RABBITMQ_URI);
+            rabbitMQChannel = await rabbitMQConnection.createChannel();
+            logger.info('Conexão com RabbitMQ estabelecida e canal criado.');
+        } catch (error) {
+            logger.error('Erro ao estabelecer conexão com RabbitMQ:', error);
+        }
+    }
+}
 
 async function forwardToWebhook(companyConfig, body) {
     const webhookUrls = [
@@ -41,7 +83,7 @@ async function forwardToWebhook(companyConfig, body) {
                     headers: headers,
                     body: JSON.stringify(body)
                 });
-                
+
                 if (!response.ok) {
                     throw new Error(`HTTP error! status: ${response.status}`);
                 }
@@ -59,15 +101,8 @@ async function sendToRabbitMQ(companyConfig, body) {
         logger.info('RabbitMQ não está habilitado ou a configuração da exchange não está definida.');
         return;
     }
-    let conn, channel;
+
     try {
-
-        logger.info('Conectando ao RabbitMQ...');
-        conn = await amqp.connect(process.env.RABBITMQ_URI);
-        logger.info('Conexão com RabbitMQ estabelecida.');
-
-        channel = await conn.createChannel();
-        logger.info('Canal RabbitMQ criado.');
 
         const exchange = companyConfig.rabbitmq_exchange;
         const queue = companyConfig.rabbitmq_queue;
@@ -100,11 +135,21 @@ app.post("/webhook/:companyId", async (req, res) => {
         const body = req.body;
         logger.info("Webhook recebido:", { body, companyId });
 
-        await forwardToWebhook(companyConfig.URLWebhookPOST, body);
-        logger.info("Enviado para o Webhook com sucesso.");
+        if (messages[companyId]) {
+            messages[companyId].forEach(client => {
+                if (client.readyState === WebSocket.OPEN) {
+                    client.send(JSON.stringify(body));
+                    logger.info(`Mensagem enviada para o WebSocket do companyId: ${companyId}`);
+                }
+            });
+        }
 
         await sendToRabbitMQ(companyConfig, body);
         logger.info(`Enviado para o RabbitMQ com sucesso. Vinculando fila '${queue}' à exchange '${exchange}' com routing key '${routingKey}'...`);
+
+        await forwardToWebhook(companyConfig.URLWebhookPOST, body);
+        logger.info("Enviado para o Webhook com sucesso.");
+      
         res.sendStatus(200);
         
         } catch (error) {
@@ -144,4 +189,7 @@ app.use((err, req, res, next) => {
 });
 
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => logger.info("Webhook está ouvindo na porta " + PORT));
+app.listen(PORT, async () => {
+    logger.info("Webhook está ouvindo na porta " + PORT);
+    await initializeRabbitMQ();
+});
