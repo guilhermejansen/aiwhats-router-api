@@ -16,6 +16,14 @@ const app = express();
 
 setupMorgan(app);
 
+sequelize.authenticate()
+  .then(() => {
+    logger.info('Conexão com o banco de dados estabelecida com sucesso.');
+  })
+  .catch(err => {
+    logger.error('Não foi possível conectar ao banco de dados:', err);
+});
+
 const redis = require('redis');
 const client = redis.createClient({
     host: process.env.REDIS_HOST,
