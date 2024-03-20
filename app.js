@@ -3,7 +3,7 @@ import fetch from 'node-fetch';
 import dotenv from 'dotenv';
 import winston from 'winston';
 import amqp from 'amqplib';
-import { getCompanyConfig } from './helpers';
+import { getCompanyConfig } from './helpers/helpers';
 
 dotenv.config();
 
