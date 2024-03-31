@@ -1,0 +1,49 @@
+version: '3.8'
+services:
+  aiwhats-router-api-dev:
+    image: setupautomatizado/aiwhats-router-api:dev
+    networks:
+      - network_public
+    environment:
+      - DB_DIALECT=postgres
+      - DB_HOST=pgbouncer
+      - DB_PORT=5432
+      - DB_NAME=setupautomatizado
+      - DB_USER=postgres
+      - DB_PASS=GuiJansen2024DEV
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=
+      - RABBITMQ_ENABLED=true
+      - RABBITMQ_URI=amqp://rabbitmq:GuiJansen2024DEV@rabbitmq:5672/setupautomatizado
+      - PORT=5000
+    deploy:
+      mode: replicated
+      replicas: 1
+      restart_policy:
+        condition: on-failure     
+      placement:
+        constraints: [node.role == manager]
+      resources:
+        limits:
+          cpus: "4"
+          memory: 8000M
+      labels:
+        - traefik.enable=true
+        - traefik.http.routers.aiwhats-router-api-dev.rule=Host(`router.aiwhats.app`)
+        - traefik.http.routers.aiwhats-router-api-dev.entrypoints=websecure
+        - traefik.http.routers.aiwhats-router-api-dev.priority=1
+        - traefik.http.routers.aiwhats-router-api-dev.tls.certresolver=letsencryptresolver
+        - traefik.http.routers.aiwhats-router-api-dev.service=aiwhats-router-api-dev
+        - traefik.http.services.aiwhats-router-api-dev.loadbalancer.server.port=5000
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+networks:
+  network_public:
+    name: network_public
+    external: true

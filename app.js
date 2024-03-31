@@ -33,13 +33,14 @@ sequelize.authenticate().then(() => {
 });
 
 const client = redis.createClient({
-    host: process.env.REDIS_HOST,
-    port: process.env.REDIS_PORT,
-    password: process.env.REDIS_PASSWORD
+    host: process.env.REDIS_HOST || 'redis',
+    port: process.env.REDIS_PORT || 6379,
+    password: process.env.REDIS_PASSWORD,
+    db: process.env.REDIS_DB || 15,
 });
 
 client.on('error', (err) => logger.error('Redis Client Error', err));
-client.on('connect', () => logger.info('Connected to Redis')); // Log when connected to Redis
+client.on('connect', () => logger.info('Connected to Redis'));
 client.connect();
 
 let rabbitMQConnection = null;
@@ -50,14 +51,26 @@ app.use(metricsMiddleware);
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+const messages = {};
+
 wss.on('connection', (ws, req) => {
     const companyId = new URL(req.url, `http://${req.headers.host}`).searchParams.get('companyId');
     const wsId = uuidv4();
     ws.id = wsId;
 
+    if (!messages[companyId]) {
+        messages[companyId] = [];
+    }
+    messages[companyId].push(ws);
+
     client.sAdd(`company:${companyId}:sockets`, wsId);
 
     ws.on('close', () => {
+    
+    const index = messages[companyId].indexOf(ws);
+    if (index > -1) {
+        messages[companyId].splice(index, 1);
+    }
 
     client.sRem(`company:${companyId}:sockets`, wsId);
     
@@ -129,6 +142,10 @@ async function forwardToWebhook(companyConfig, body) {
 }
 
 async function sendToRabbitMQ(companyConfig, body) {
+    if (!rabbitMQConnection || !rabbitMQChannel) {
+        logger.info('RabbitMQ não está Conectado ou a configuração da conexão não está definida.');
+        return;
+    }
     if (process.env.RABBITMQ_ENABLED !== 'true' || !companyConfig.rabbitmq_exchange) {
         logger.info('RabbitMQ não está habilitado ou a configuração da exchange não está definida.');
         return;
@@ -136,6 +153,10 @@ async function sendToRabbitMQ(companyConfig, body) {
 
     try {
 
+        if (!companyConfig.rabbitmq_exchange || !companyConfig.rabbitmq_queue) {
+            logger.error(`A configuração da exchange ou da fila não está definida para a empresa ${companyConfig.companyId}.`);
+            return;
+        }
         const exchange = companyConfig.rabbitmq_exchange;
         const queue = companyConfig.rabbitmq_queue;
         const routingKey = companyConfig.rabbitmq_routing_key || '';
@@ -159,7 +180,7 @@ async function sendToRabbitMQ(companyConfig, body) {
     }
 }
 
-app.post("/webhook/:companyId", async (req, res) => {
+app.post("/webhook/:companyId/:conexaoId", async (req, res) => {
     try {
         const { companyId } = req.params;
         const companyConfig = await WhatsappOficial.findByPk(companyId);
@@ -184,7 +205,7 @@ app.post("/webhook/:companyId", async (req, res) => {
         res.sendStatus(200);
         
         } catch (error) {
-        logger.error("Erro no POST /webhook/:companyId", { erro: error.message });
+        logger.error("Erro no POST /webhook/:companyId/:conexaoId", { erro: error.message });
         res.sendStatus(500);
     }
 });
