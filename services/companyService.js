@@ -2,7 +2,6 @@
 import Empresa from '../models/companys.js';
 import { logger } from '../config/logger.js';
 
-// Serviço para buscar uma empresa pelo ID
 async function findCompanyById(companyId) {
     try {
         const company = await Empresa.findByPk(companyId);
@@ -17,7 +16,6 @@ async function findCompanyById(companyId) {
     }
 }
 
-// Serviço para criar uma nova empresa
 async function createCompany(companyData) {
     try {
         const newCompany = await Empresa.create(companyData);
@@ -28,7 +26,6 @@ async function createCompany(companyData) {
     }
 }
 
-// Serviço para atualizar uma empresa existente
 async function updateCompany(companyId, updateData) {
     try {
         const company = await Empresa.findByPk(companyId);

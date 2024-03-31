@@ -16,11 +16,11 @@ export async function getCompany(req, res) {
 }
 
 async function createCompany(req, res) {
-    // Lógica para criar uma nova empresa...
+
 }
 
 async function updateCompany(req, res) {
-    // Lógica para atualizar uma empresa...
+    
 }
 
 export { createCompany, updateCompany };

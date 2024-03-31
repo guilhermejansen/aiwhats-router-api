@@ -7,9 +7,9 @@ const Company = sequelize.define('Company', {
         type: DataTypes.STRING,
         allowNull: false,
     },
-    // Defina outros campos conforme necessário
+
 }, {
-    // Opções adicionais, se necessário
+
 });
 
 export default Company;

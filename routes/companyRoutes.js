@@ -8,6 +8,4 @@ router.get('/:id', getCompany);
 router.post('/', createCompany);
 router.put('/:id', updateCompany);
 
-// Adicione mais rotas conforme necessário
-
 export default router;

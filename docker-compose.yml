@@ -10,12 +10,12 @@ services:
       - DB_PORT=5432
       - DB_NAME=setupautomatizado
       - DB_USER=postgres
-      - DB_PASS=GuiJansen2024DEV
+      - DB_PASS=
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - REDIS_PASSWORD=
       - RABBITMQ_ENABLED=true
-      - RABBITMQ_URI=amqp://rabbitmq:GuiJansen2024DEV@rabbitmq:5672/setupautomatizado
+      - RABBITMQ_URI=amqp://rabbitmq:SENHA@rabbitmq:5672/setupautomatizado
       - PORT=5000
     deploy:
       mode: replicated
@@ -26,8 +26,8 @@ services:
         constraints: [node.role == manager]
       resources:
         limits:
-          cpus: "4"
-          memory: 8000M
+          cpus: "1"
+          memory: 10240M
       labels:
         - traefik.enable=true
         - traefik.http.routers.aiwhats-router-api-dev.rule=Host(`router.aiwhats.app`)
